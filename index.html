@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Plataforma de análisis y visualización de infraestructura de recarga de vehículos eléctricos y gasolineras con exportación de datos.">
+  <title>EcoRoute | Análisis de Infraestructura de Recarga y Repostaje</title>
+  
+  <!-- Google Fonts: Inter & Outfit -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- FontAwesome Icons CDN -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  
+  <!-- SheetJS (XLSX) CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  
+  <!-- Application Icon -->
+  <link rel="icon" type="image/png" href="assets/icon.png">
+  
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Background Glow Effect -->
+  <div class="bg-ambient-glow"></div>
+
+  <!-- Header -->
+  <header class="app-header">
+    <div class="header-container">
+      <div class="brand">
+        <div class="brand-icon">
+          <i class="fa-solid fa-bolt-lightning"></i>
+        </div>
+        <div class="brand-text">
+          <h1>EcoRoute <span class="highlight">Analytics</span></h1>
+          <p>Infraestructura de Recarga Eléctrica y Estaciones de Servicio</p>
+        </div>
+      </div>
+      <div class="header-meta">
+        <div class="status-badge" id="apiStatusBadge">
+          <span class="status-dot"></span>
+          <span id="apiStatusText">Configurar API Key</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Layout -->
+  <main class="main-container">
+    
+    <!-- Controls & Configuration Section -->
+    <section class="config-grid">
+      
+      <!-- API Key Card -->
+      <div class="card api-card">
+        <div class="card-header">
+          <div class="card-title">
+            <i class="fa-solid fa-key text-accent"></i>
+            <h2>Credenciales Open Charge Map</h2>
+          </div>
+          <span class="tooltip-trigger" title="Obtén tu API key gratuita en openchargemap.org">
+            <i class="fa-regular fa-circle-question"></i>
+          </span>
+        </div>
+        <div class="card-body">
+          <div class="input-group">
+            <label for="apiKeyInput">API Key de Open Charge Map</label>
+            <div class="password-wrapper">
+              <input 
+                type="password" 
+                id="apiKeyInput" 
+                placeholder="Ingresa tu clave de API (Ej: d41d8cd98f00b204...)" 
+                autocomplete="off"
+                spellcheck="false"
+              >
+              <button type="button" id="toggleApiKeyBtn" class="btn-icon" title="Mostrar/Ocultar API Key">
+                <i class="fa-regular fa-eye" id="toggleApiKeyIcon"></i>
+              </button>
+            </div>
+          </div>
+          <div class="checkbox-wrapper">
+            <label class="custom-checkbox">
+              <input type="checkbox" id="rememberApiKeyCheckbox">
+              <span class="checkmark"></span>
+              Recordar API Key en este navegador
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Filters Card -->
+      <div class="card filters-card">
+        <div class="card-header">
+          <div class="card-title">
+            <i class="fa-solid fa-sliders text-primary"></i>
+            <h2>Parámetros de Búsqueda</h2>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="filter-form-grid">
+            
+            <!-- Selector País -->
+            <div class="input-group">
+              <label for="countrySelect">País</label>
+              <div class="select-wrapper">
+                <select id="countrySelect">
+                  <option value="ES" selected>🇪🇸 España (ES)</option>
+                  <option value="FR">🇫🇷 Francia (FR)</option>
+                  <option value="PT">🇵🇹 Portugal (PT)</option>
+                  <option value="DE">🇩🇪 Alemania (DE)</option>
+                  <option value="IT">🇮🇹 Italia (IT)</option>
+                  <option value="UK">🇬🇧 Reino Unido (UK)</option>
+                </select>
+                <i class="fa-solid fa-chevron-down select-arrow"></i>
+              </div>
+            </div>
+
+            <!-- Selector Tipo de Estación -->
+            <div class="input-group">
+              <label for="stationTypeSelect">Tipo de Infraestructura</label>
+              <div class="select-wrapper">
+                <select id="stationTypeSelect">
+                  <option value="electric" selected>⚡ Estaciones Eléctricas (EV)</option>
+                  <option value="fuel">⛽ Gasolineras / Combustible</option>
+                  <option value="hybrid">🔄 Mixtas / Ambas</option>
+                </select>
+                <i class="fa-solid fa-chevron-down select-arrow"></i>
+              </div>
+            </div>
+
+            <!-- Filtro Autovía (Opcional) -->
+            <div class="input-group">
+              <label for="highwayInput">
+                Filtro por Autovía / Vía
+                <span class="label-optional">(Opcional)</span>
+              </label>
+              <div class="input-icon-wrapper">
+                <i class="fa-solid fa-road input-icon"></i>
+                <input 
+                  type="text" 
+                  id="highwayInput" 
+                  placeholder="Ej: A-7, AP-7, A-3, N-340..."
+                >
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="filter-actions">
+            <button id="btnSearch" class="btn btn-primary">
+              <i class="fa-solid fa-magnifying-glass"></i>
+              <span>Consultar Datos</span>
+            </button>
+            <button id="btnResetFilters" class="btn btn-ghost">
+              <i class="fa-solid fa-rotate-left"></i>
+              <span>Restablecer</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- Key Metrics & Counter Section -->
+    <section class="metrics-grid">
+      <div class="metric-card">
+        <div class="metric-icon bg-emerald-light">
+          <i class="fa-solid fa-charging-station text-primary"></i>
+        </div>
+        <div class="metric-info">
+          <span class="metric-label">Total Estaciones</span>
+          <span class="metric-value" id="stationCountDisplay">0</span>
+        </div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-icon bg-blue-light">
+          <i class="fa-solid fa-building-user text-accent"></i>
+        </div>
+        <div class="metric-info">
+          <span class="metric-label">Operadores Únicos</span>
+          <span class="metric-value" id="operatorCountDisplay">0</span>
+        </div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-icon bg-purple-light">
+          <i class="fa-solid fa-award text-purple"></i>
+        </div>
+        <div class="metric-info">
+          <span class="metric-label">Operador Líder</span>
+          <span class="metric-value metric-sub" id="topOperatorDisplay">-</span>
+        </div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-icon bg-amber-light">
+          <i class="fa-solid fa-filter text-amber"></i>
+        </div>
+        <div class="metric-info">
+          <span class="metric-label">Filtro Activo</span>
+          <span class="metric-value metric-sub" id="activeFilterDisplay">Todos</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Operator Statistics Section -->
+    <section class="card stats-section">
+      <div class="card-header">
+        <div class="card-title">
+          <i class="fa-solid fa-chart-simple text-primary"></i>
+          <h2>Estadísticas por Operador</h2>
+        </div>
+        <span class="badge-count" id="statsOperatorBadge">0 operadores</span>
+      </div>
+      <div class="card-body">
+        <div class="operator-stats-grid" id="operatorStatsContainer">
+          <div class="empty-stats-msg">
+            <i class="fa-solid fa-chart-pie"></i>
+            <p>Aún no se han cargado datos para calcular estadísticas.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Results Table Section -->
+    <section class="card table-section">
+      <div class="table-header-toolbar">
+        <div class="table-title-area">
+          <div class="card-title">
+            <i class="fa-solid fa-table-list text-accent"></i>
+            <h2>Listado de Estaciones</h2>
+          </div>
+          <span class="table-counter-pill" id="tableCounterBadge">
+            0 resultados
+          </span>
+        </div>
+
+        <!-- Toolbar Actions & Export Buttons -->
+        <div class="table-actions">
+          <div class="table-search-box">
+            <i class="fa-solid fa-filter"></i>
+            <input type="text" id="tableFilterInput" placeholder="Buscar en la tabla...">
+          </div>
+          
+          <button id="btnExportCSV" class="btn btn-outline" title="Exportar resultados a formato CSV">
+            <i class="fa-solid fa-file-csv"></i>
+            <span>Exportar CSV</span>
+          </button>
+          
+          <button id="btnExportExcel" class="btn btn-excel" title="Exportar resultados a Excel (.xlsx) con SheetJS">
+            <i class="fa-solid fa-file-excel"></i>
+            <span>Exportar Excel</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Table Container -->
+      <div class="table-responsive">
+        <table class="data-table" id="stationsTable">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Operador</th>
+              <th>Localidad</th>
+              <th>Dirección</th>
+              <th>Latitud / Longitud</th>
+              <th>Tipo / Conectores</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="stationsTableBody">
+            <tr class="empty-row">
+              <td colspan="7">
+                <div class="empty-state">
+                  <i class="fa-solid fa-map-location-dot"></i>
+                  <p>No hay estaciones para mostrar. Configura tu API Key o realiza una consulta.</p>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Table Footer / Pagination or Status Info -->
+      <div class="table-footer">
+        <span id="tableSummaryText">Mostrando 0 de 0 registros</span>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Toast Notification Container -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- JavaScript Application Logic -->
+  <script src="app.js" defer></script>
+</body>
+</html>
