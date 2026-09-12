@@ -814,8 +814,10 @@ function mapOsmFuelNodeToStation(node, index) {
   if (tags['fuel:cng'] === 'yes') fuelTypes.push('GNC');
   if (tags['fuel:adblue'] === 'yes') fuelTypes.push('AdBlue');
 
-  const lat = typeof node.lat === 'number' ? node.lat : parseFloat(node.lat);
-  const lon = typeof node.lon === 'number' ? node.lon : parseFloat(node.lon);
+  const latVal = node.lat !== undefined ? node.lat : (node.center?.lat);
+  const lonVal = node.lon !== undefined ? node.lon : (node.center?.lon);
+  const lat = typeof latVal === 'number' ? latVal : parseFloat(latVal);
+  const lon = typeof lonVal === 'number' ? lonVal : parseFloat(lonVal);
 
   return {
     id: `osm-${node.id}`,
@@ -840,16 +842,14 @@ function mapOsmFuelNodeToStation(node, index) {
  * Connects to the OpenStreetMap Overpass API searching for nodes with amenity=fuel
  * in the designated country.
  */
-async function fetchOverpassFuelStations(countryCode = 'ES', maxResults = DEFAULT_MAX_STATIONS) {
-  // Normalize ISO 3166-1 country code (UK -> GB in OSM standard)
-  const isoCode = countryCode === 'UK' ? 'GB' : countryCode;
+async function fetchOverpassFuelStations(countryCode = 'ES') {
+  // El código ISO del país (ej. "ES") debe venir del selector del HTML
+  const codigoPais = countryCode === 'UK' ? 'GB' : (countryCode || 'ES');
 
-  const query = `
-    [out:json][timeout:90];
-    area["ISO3166-1"="${isoCode}"][admin_level=2]->.countryArea;
-    node["amenity"="fuel"](area.countryArea);
-    out body ${maxResults};
-  `.trim();
+  const query = `[out:json][timeout:90];
+area["ISO3166-1"="${codigoPais}"][admin_level=2]->.searchArea;
+node["amenity"="fuel"](area.searchArea);
+out center;`.trim();
 
   // Primary & fallback endpoints for high availability
   const endpoints = [
@@ -870,7 +870,7 @@ async function fetchOverpassFuelStations(countryCode = 'ES', maxResults = DEFAUL
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status} en ${baseUrl}`);
+        throw new Error('Error en la respuesta del servidor');
       }
 
       const data = await response.json();
@@ -878,6 +878,7 @@ async function fetchOverpassFuelStations(countryCode = 'ES', maxResults = DEFAUL
         throw new Error('Estructura de respuesta inválida desde Overpass');
       }
 
+      console.log('Gasolineras encontradas:', data.elements.length);
       return data.elements;
     } catch (err) {
       lastError = err;
@@ -896,9 +897,8 @@ async function loadAndProcessFuelStations() {
   setLoadingState(true, 'Consultando Overpass API (OpenStreetMap) para gasolineras...');
 
   try {
-    const limit = state.maxResults || DEFAULT_MAX_STATIONS;
-    showToast(`Consultando gasolineras (amenity=fuel) en ${state.country} vía Overpass API [hasta ${limit.toLocaleString()}]...`, 'info');
-    const rawElements = await fetchOverpassFuelStations(state.country, limit);
+    showToast(`Consultando gasolineras (amenity=fuel) en ${state.country} vía Overpass API...`, 'info');
+    const rawElements = await fetchOverpassFuelStations(state.country);
 
     // Direct mapping: each OSM node is a unique station (no clustering)
     const fuelStations = rawElements.map((node, index) => mapOsmFuelNodeToStation(node, index));
@@ -910,12 +910,12 @@ async function loadAndProcessFuelStations() {
     applyFilters();
 
     showToast(
-      `Obtenidas ${fuelStations.length} gasolineras desde OpenStreetMap (estaciones únicas, sin clustering).`,
+      `Gasolineras encontradas: ${fuelStations.length} desde OpenStreetMap.`,
       'success'
     );
   } catch (error) {
-    console.error('Error al consultar Overpass API:', error);
-    showToast(`Aviso Overpass API: ${error.message}. Cargando gasolineras de respaldo.`, 'warning');
+    console.error('Error en la API de Overpass:', error);
+    showToast(`Hubo un error al descargar las gasolineras. Inténtalo de nuevo. (${error.message})`, 'warning');
 
     // Graceful fallback to rich sample OSM dataset
     const fallbackStations = SAMPLE_RAW_OSM_FUELS.map((node, index) => mapOsmFuelNodeToStation(node, index));
@@ -956,7 +956,7 @@ async function loadAndProcessHybridStations() {
     // 2. Fuel stations from Overpass (without clustering)
     let fuelStations = [];
     try {
-      const rawOsm = await fetchOverpassFuelStations(state.country, limit);
+      const rawOsm = await fetchOverpassFuelStations(state.country);
       fuelStations = rawOsm.map((node, index) => mapOsmFuelNodeToStation(node, index));
     } catch (err) {
       console.warn('Overpass error, usando datos demo:', err);
