@@ -29,26 +29,29 @@ Disponible tanto como **aplicación web autónoma** como en forma de **aplicaci�
 ## ✨ Características Principales
 
 ### 1. ⚡ Movilidad Eléctrica & Clustering Espacial Inteligente
-- Conexión en vivo con la API v3 de **Open Charge Map**.
-- **Algoritmo de Agrupamiento Geográfico (Haversine)**:
+- Conexión en vivo con la API v3 de **Open Charge Map** con capacidad masiva ampliada de hasta **99.999 estaciones**.
+- **Algoritmo de Agrupamiento Geográfico de Alto Rendimiento (Spatial Grid Hash + Haversine)**:
+  - Complejidad reducida a $O(N)$ mediante indexación por cuadrícula espacial, permitiendo procesar decenas de miles de registros en milisegundos sin congelar la interfaz.
   - Fusión de puntos de recarga con coordenadas idénticas o distancia residual $\le 35\text{ metros}$ en una **estación física unificada**.
   - Recálculo dinámico de **centroides geográficos** $(\overline{\text{lat}}, \overline{\text{lon}})$.
   - Agregación total de conectores operativos y detección automática de la **potencia pico de carga (kW)** disponible.
   - Normalización inteligente de operadores (Tesla, Iberdrola, Endesa, Repsol, Ionity, etc.).
 
 ### 2. ⛽ Estaciones de Servicio Tradicionales (OpenStreetMap)
-- Extracción de datos en tiempo real vía **Overpass API** de OSM (`node["amenity"="fuel"]`).
+- Extracción de datos en tiempo real vía **Overpass API** de OSM (`node["amenity"="fuel"]`) con límite ampliado a **99.999 estaciones** y timeout adaptativo de 90 segundos.
 - Omisión precisa de clustering: cada nodo de OSM representa una estación física independiente.
 - Detección de marcas comerciales, direcciones normalizadas y catálogo de carburantes disponibles (Gasolina 95/98, Diésel, GLP, GNC, AdBlue).
 
-### 3. 🛣️ Filtrado Inteligente por Autovía & Vía
-- Motor de búsqueda con **delimitación estricta de límites de palabra (`word boundaries`)**:
+### 3. 🛣️ Parámetros de Búsqueda y Filtrado Inteligente
+- **Límite configurable de estaciones** desde la interfaz: desde 1 hasta **99.999 estaciones**.
+- Motor de búsqueda por corredor/autovía con **delimitación estricta de límites de palabra (`word boundaries`)**:
   - Distingue con precisión entre autovías principales y ramales (ej. `A-7` no genera falsos positivos con `A-70`).
   - Soporta búsquedas con guión, sin guión (`A7` = `A-7`), radiales (`M-30`, `M-40`, `M-50`) y carreteras nacionales (`N-340`, `N-II`).
 
 ### 4. 📊 Analítica y Cuotas de Mercado en Tiempo Real
 - **Tarjetas KPI dinámicas**: Total de estaciones físicas, marcas únicas operativas, operador líder y vía activa.
 - **Gráfico interactivo de barras**: Desglose visual del market share (%) y número de estaciones por operador para los resultados filtrados.
+- **Renderizado Fluido**: Visualización ágil de las primeras 1.000 estaciones en DOM manteniendo el total de los 99.999 registros disponibles para filtros y exportaciones.
 
 ### 5. 💾 Exportación Profesional de Datos
 - **Nombramiento Dinámico**:

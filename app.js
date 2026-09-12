@@ -5,22 +5,26 @@
  * ============================================================================
  */
 
+// Residual distance threshold for clustering (meters)
+// Points with distance <= 35m or identical coordinates are unified into a single physical Station
+const CLUSTER_THRESHOLD_METERS = 35;
+
+// Default maximum station retrieval limit (extended to 99999)
+const DEFAULT_MAX_STATIONS = 99999;
+
 // Global Application State
 const state = {
   apiKey: '',
   country: 'ES',
   type: 'electric',
   highway: '',
+  maxResults: DEFAULT_MAX_STATIONS,
   stations: [],
   filteredStations: [],
   isLoading: false,
   rawPoiCount: 0,
   clusteredCount: 0
 };
-
-// Residual distance threshold for clustering (meters)
-// Points with distance <= 35m or identical coordinates are unified into a single physical Station
-const CLUSTER_THRESHOLD_METERS = 35;
 
 // Sample Raw Open Charge Map POI Dataset for testing & fallback demonstration
 const SAMPLE_RAW_OCM_POIS = [
@@ -316,6 +320,7 @@ const DOM = {
   countrySelect: document.getElementById('countrySelect'),
   stationTypeSelect: document.getElementById('stationTypeSelect'),
   highwayInput: document.getElementById('highwayInput'),
+  maxResultsInput: document.getElementById('maxResultsInput'),
   btnSearch: document.getElementById('btnSearch'),
   btnResetFilters: document.getElementById('btnResetFilters'),
 
@@ -510,6 +515,11 @@ function clusterChargingPoints(rawPoiList, thresholdMeters = CLUSTER_THRESHOLD_M
     return [];
   }
 
+  // Spatial Grid Indexing for O(N) clustering performance with up to 99,999 stations
+  const CELL_SIZE = 0.0005; // ~55 meters cell window, exceeding the 35m threshold
+  const spatialGrid = new Map();
+  const getCellKey = (gx, gy) => `${gx}_${gy}`;
+
   // Intermediate cluster groups: each element holds array of POIs grouped together
   const clusterGroups = [];
 
@@ -524,15 +534,27 @@ function clusterChargingPoints(rawPoiList, thresholdMeters = CLUSTER_THRESHOLD_M
       return; // Skip records without valid coordinates
     }
 
-    // Search for an existing cluster within the threshold distance
+    const gx = Math.floor(lat / CELL_SIZE);
+    const gy = Math.floor(lon / CELL_SIZE);
+
+    // Search only adjacent grid cells (3x3 neighborhood)
     let targetCluster = null;
     let minDistance = Infinity;
 
-    for (const cluster of clusterGroups) {
-      const dist = haversineDistanceMeters(lat, lon, cluster.centroidLat, cluster.centroidLon);
-      if (dist <= thresholdMeters && dist < minDistance) {
-        minDistance = dist;
-        targetCluster = cluster;
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        const key = getCellKey(gx + dx, gy + dy);
+        const cellClusters = spatialGrid.get(key);
+        if (cellClusters) {
+          for (let i = 0; i < cellClusters.length; i++) {
+            const cluster = cellClusters[i];
+            const dist = haversineDistanceMeters(lat, lon, cluster.centroidLat, cluster.centroidLon);
+            if (dist <= thresholdMeters && dist < minDistance) {
+              minDistance = dist;
+              targetCluster = cluster;
+            }
+          }
+        }
       }
     }
 
@@ -543,12 +565,19 @@ function clusterChargingPoints(rawPoiList, thresholdMeters = CLUSTER_THRESHOLD_M
       targetCluster.centroidLat = ((targetCluster.centroidLat * (n - 1)) + lat) / n;
       targetCluster.centroidLon = ((targetCluster.centroidLon * (n - 1)) + lon) / n;
     } else {
-      // Start a new cluster
-      clusterGroups.push({
+      // Start a new cluster and index in spatial grid
+      const newCluster = {
         centroidLat: lat,
         centroidLon: lon,
         pois: [poi]
-      });
+      };
+      clusterGroups.push(newCluster);
+
+      const cellKey = getCellKey(gx, gy);
+      if (!spatialGrid.has(cellKey)) {
+        spatialGrid.set(cellKey, []);
+      }
+      spatialGrid.get(cellKey).push(newCluster);
     }
   });
 
@@ -643,7 +672,7 @@ function clusterChargingPoints(rawPoiList, thresholdMeters = CLUSTER_THRESHOLD_M
 /**
  * Executes fetch to Open Charge Map API for charging stations.
  */
-async function fetchOpenChargeMapData(apiKey, countryCode = 'ES', maxResults = 500) {
+async function fetchOpenChargeMapData(apiKey, countryCode = 'ES', maxResults = DEFAULT_MAX_STATIONS) {
   const endpoint = new URL('https://api.openchargemap.io/v3/poi/');
   endpoint.searchParams.append('output', 'json');
   endpoint.searchParams.append('countrycode', countryCode);
@@ -695,8 +724,9 @@ async function loadAndProcessElectricStations() {
   setLoadingState(true);
 
   try {
-    showToast(`Consultando Open Charge Map (${state.country})...`, 'info');
-    const rawData = await fetchOpenChargeMapData(apiKey, state.country, 500);
+    const limit = state.maxResults || DEFAULT_MAX_STATIONS;
+    showToast(`Consultando Open Charge Map (${state.country}) [hasta ${limit.toLocaleString()} estaciones]...`, 'info');
+    const rawData = await fetchOpenChargeMapData(apiKey, state.country, limit);
 
     state.rawPoiCount = rawData.length;
     processAndDisplayData(rawData, true);
@@ -810,12 +840,12 @@ function mapOsmFuelNodeToStation(node, index) {
  * Connects to the OpenStreetMap Overpass API searching for nodes with amenity=fuel
  * in the designated country.
  */
-async function fetchOverpassFuelStations(countryCode = 'ES', maxResults = 250) {
+async function fetchOverpassFuelStations(countryCode = 'ES', maxResults = DEFAULT_MAX_STATIONS) {
   // Normalize ISO 3166-1 country code (UK -> GB in OSM standard)
   const isoCode = countryCode === 'UK' ? 'GB' : countryCode;
 
   const query = `
-    [out:json][timeout:25];
+    [out:json][timeout:90];
     area["ISO3166-1"="${isoCode}"][admin_level=2]->.countryArea;
     node["amenity"="fuel"](area.countryArea);
     out body ${maxResults};
@@ -866,8 +896,9 @@ async function loadAndProcessFuelStations() {
   setLoadingState(true, 'Consultando Overpass API (OpenStreetMap) para gasolineras...');
 
   try {
-    showToast(`Consultando gasolineras (amenity=fuel) en ${state.country} vía Overpass API...`, 'info');
-    const rawElements = await fetchOverpassFuelStations(state.country, 250);
+    const limit = state.maxResults || DEFAULT_MAX_STATIONS;
+    showToast(`Consultando gasolineras (amenity=fuel) en ${state.country} vía Overpass API [hasta ${limit.toLocaleString()}]...`, 'info');
+    const rawElements = await fetchOverpassFuelStations(state.country, limit);
 
     // Direct mapping: each OSM node is a unique station (no clustering)
     const fuelStations = rawElements.map((node, index) => mapOsmFuelNodeToStation(node, index));
@@ -905,13 +936,14 @@ async function loadAndProcessHybridStations() {
   setLoadingState(true, 'Consultando infraestructura mixta (OCM + Overpass)...');
 
   try {
-    showToast(`Cargando estaciones de recarga y gasolineras para ${state.country}...`, 'info');
+    const limit = state.maxResults || DEFAULT_MAX_STATIONS;
+    showToast(`Cargando estaciones de recarga y gasolineras para ${state.country} [hasta ${limit.toLocaleString()}]...`, 'info');
 
     // 1. Electric stations (with clustering)
     let electricStations = [];
     if (apiKey) {
       try {
-        const rawOcm = await fetchOpenChargeMapData(apiKey, state.country, 300);
+        const rawOcm = await fetchOpenChargeMapData(apiKey, state.country, limit);
         electricStations = clusterChargingPoints(rawOcm, CLUSTER_THRESHOLD_METERS);
       } catch (err) {
         console.warn('OCM error, usando datos demo:', err);
@@ -924,7 +956,7 @@ async function loadAndProcessHybridStations() {
     // 2. Fuel stations from Overpass (without clustering)
     let fuelStations = [];
     try {
-      const rawOsm = await fetchOverpassFuelStations(state.country, 200);
+      const rawOsm = await fetchOverpassFuelStations(state.country, limit);
       fuelStations = rawOsm.map((node, index) => mapOsmFuelNodeToStation(node, index));
     } catch (err) {
       console.warn('Overpass error, usando datos demo:', err);
@@ -1023,6 +1055,20 @@ function bindFilterEvents() {
     applyFilters(); // Dynamically updates total counter & brand stats in real-time
   });
 
+  // Dynamic Station Retrieval Limit (Up to 99999)
+  if (DOM.maxResultsInput) {
+    DOM.maxResultsInput.addEventListener('input', (e) => {
+      const val = parseInt(e.target.value, 10);
+      state.maxResults = (!isNaN(val) && val > 0) ? Math.min(val, 99999) : DEFAULT_MAX_STATIONS;
+    });
+
+    DOM.maxResultsInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        handleSearchAction();
+      }
+    });
+  }
+
   // Search button triggers appropriate API fetcher
   DOM.btnSearch.addEventListener('click', handleSearchAction);
 
@@ -1037,10 +1083,14 @@ function bindFilterEvents() {
     DOM.stationTypeSelect.value = 'electric';
     DOM.highwayInput.value = '';
     DOM.tableFilterInput.value = '';
+    if (DOM.maxResultsInput) {
+      DOM.maxResultsInput.value = DEFAULT_MAX_STATIONS.toString();
+    }
 
     state.country = 'ES';
     state.type = 'electric';
     state.highway = '';
+    state.maxResults = DEFAULT_MAX_STATIONS;
 
     applyFilters();
     showToast('Filtros restablecidos al estado inicial', 'info');
@@ -1195,10 +1245,17 @@ function renderOperatorStats(data) {
    Results Table Component with Clustering Indicators
    -------------------------------------------------------------------------- */
 function renderTable(data) {
-  DOM.tableCounterBadge.textContent = `${data.length} estaciones físicas`;
+  const total = data.length;
+  DOM.tableCounterBadge.textContent = `${total.toLocaleString()} estaciones físicas`;
   
-  const rawInfo = state.rawPoiCount > 0 ? ` (agrupadas de ${state.rawPoiCount} puntos API)` : '';
-  DOM.tableSummaryText.textContent = `Mostrando ${data.length} de ${state.stations.length} estaciones físicas${rawInfo}`;
+  const MAX_DOM_ROWS = 1000;
+  const isTruncated = total > MAX_DOM_ROWS;
+  const displayItems = isTruncated ? data.slice(0, MAX_DOM_ROWS) : data;
+
+  const rawInfo = state.rawPoiCount > 0 ? ` (agrupadas de ${state.rawPoiCount.toLocaleString()} puntos API)` : '';
+  DOM.tableSummaryText.textContent = isTruncated
+    ? `Mostrando las primeras ${MAX_DOM_ROWS.toLocaleString()} de ${total.toLocaleString()} estaciones en tabla (exporta a CSV/Excel para la totalidad)${rawInfo}`
+    : `Mostrando ${total.toLocaleString()} de ${state.stations.length.toLocaleString()} estaciones físicas${rawInfo}`;
 
   if (!data || data.length === 0) {
     DOM.stationsTableBody.innerHTML = `
@@ -1214,7 +1271,7 @@ function renderTable(data) {
     return;
   }
 
-  const rows = data.map((item, index) => {
+  const rows = displayItems.map((item, index) => {
     const isElectric = item.type === 'electric';
     const typeBadge = isElectric
       ? `<span class="badge-tag badge-electric"><i class="fa-solid fa-bolt"></i> EV</span>`
@@ -1296,7 +1353,16 @@ function renderTable(data) {
     `;
   }).join('');
 
-  DOM.stationsTableBody.innerHTML = rows;
+  const footerNotice = isTruncated ? `
+    <tr class="table-info-row">
+      <td colspan="7" style="text-align: center; padding: 1.1rem; color: var(--text-secondary); background: rgba(0, 229, 255, 0.04); font-size: 0.85rem; border-top: 1px dashed var(--border-subtle);">
+        <i class="fa-solid fa-circle-info text-accent" style="margin-right: 6px;"></i>
+        Mostrando las primeras 1.000 estaciones en pantalla para máxima fluidez. La totalidad de los <strong>${total.toLocaleString()}</strong> registros está activa en filtros, métricas y exportación a Excel / CSV.
+      </td>
+    </tr>
+  ` : '';
+
+  DOM.stationsTableBody.innerHTML = rows + footerNotice;
 }
 
 /* --------------------------------------------------------------------------
